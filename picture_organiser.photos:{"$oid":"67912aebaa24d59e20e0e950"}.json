@@ -1,0 +1,21 @@
+{
+  "_id": {
+    "$oid": "67912aebaa24d59e20e0e950"
+  },
+  "user_id": "12345",
+  "file_path": "/images/vacation.jpg",
+  "upload_date": {
+    "$date": "2025-01-22T17:29:15.092Z"
+  },
+  "metadata": {
+    "location": "Hawaii, USA",
+    "date_taken": {
+      "$date": "2025-01-10T00:00:00Z"
+    },
+    "device": "Canon EOS 90D"
+  },
+  "tags": [
+    "Beach",
+    "Vacation"
+  ]
+}
