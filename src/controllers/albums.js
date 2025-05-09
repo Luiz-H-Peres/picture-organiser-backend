@@ -4,6 +4,7 @@ const { baseController } = require("./baseController");
 const sharp = require('sharp');
 const ExifParser = require('exif-parser');
 
+// GET all albums for the authenticated user
 const getAlbumsController = async (req, res) => {
     return baseController({
         req,
@@ -14,8 +15,9 @@ const getAlbumsController = async (req, res) => {
             return albums;
         }
     });
-}
+};
 
+// CREATE a new album
 const createAlbumController = async (req, res) => {
     return baseController({
         res,
@@ -23,7 +25,6 @@ const createAlbumController = async (req, res) => {
         required: ['album_name'],
         requiredAuth: true,
         async callback({ db, body, user }) {
-
             const { album_name, description } = body;
 
             const newAlbum = {
@@ -36,15 +37,15 @@ const createAlbumController = async (req, res) => {
 
             const album = await db.collection('albums').insertOne(newAlbum);
 
-            // Return the album object
             return {
                 ...newAlbum,
                 _id: album.insertedId,
             };
         }
     });
-}
+};
 
+// UPLOAD photo(s) to album
 const uploadPhotoController = async (req, res) => {
     return baseController({
         res,
@@ -52,37 +53,42 @@ const uploadPhotoController = async (req, res) => {
         required: ['albumId'],
         requiredAuth: true,
         async callback({ db, body, user }) {
-
             const { albumId, description } = body;
             const { files } = req;
 
             if (!files || files.length === 0) {
-                throw new Error({ message: 'No files uploaded', code: 400 });
+                const err = new Error('No files uploaded');
+                err.code = 400;
+                throw err;
             }
 
-            // Process each file: validate, convert, extract metadata
             const photos = await Promise.all(
                 files.map(async (file) => {
                     const fileType = file.mimetype;
 
                     if (!fileType.startsWith('image/')) {
-                        throw new Error({ message: 'Invalid file type', code: 400 });
+                        const err = new Error('Invalid file type');
+                        err.code = 400;
+                        throw err;
                     }
 
                     let metadata = await sharp(file.buffer).metadata();
                     metadata.description = description;
                     const base64Image = file.buffer.toString('base64');
 
-                    if (metadata.exif) {
+                    if (metadata.exif && Buffer.isBuffer(metadata.exif)) {
                         try {
                             const parser = ExifParser.create(metadata.exif);
                             const exifData = parser.parse();
                             metadata = {
                                 ...metadata,
-                                ...exifData,
+                                make: exifData.tags?.Make,
+                                model: exifData.tags?.Model,
+                                created: exifData.tags?.DateTimeOriginal,
+                                orientation: exifData.tags?.Orientation,
                             };
                         } catch (error) {
-                            console.error('Error parsing EXIF data:', error);
+                            console.warn('📷 EXIF parse failed:', error.message);
                         }
                     }
 
@@ -103,14 +109,17 @@ const uploadPhotoController = async (req, res) => {
             );
 
             if (result.modifiedCount === 0) {
-                throw new Error({ message: 'Album not found or user does not have permission', code: 404 });
+                const err = new Error('Album not found or user does not have permission');
+                err.code = 404;
+                throw err;
             }
 
-            return result
+            return result;
         }
     });
-}
+};
 
+// DELETE a photo from an album
 const deletePhotoController = async (req, res) => {
     return baseController({
         req,
@@ -118,72 +127,46 @@ const deletePhotoController = async (req, res) => {
         required: ['albumId', 'photoId'],
         requiredAuth: true,
         async callback({ db, body, user }) {
-
             const { albumId, photoId } = body;
 
-            // Find the album to ensure the user owns it
             const album = await db.collection('albums').findOne({
                 _id: new ObjectId(albumId),
                 user_id: req.user.userId,
             });
 
             if (!album) {
-                throw new Error({ error: 'Album not found or unauthorized', code: 404 });
+                const err = new Error('Album not found or unauthorized');
+                err.code = 404;
+                throw err;
             }
 
-            const photos = album.photos;
-            const photoIndex = photos.findIndex((photo) => photo._id.toString() === photoId);
+            const photoIndex = album.photos.findIndex((photo) => photo._id.toString() === photoId);
 
             if (photoIndex === -1) {
-                throw new Error({ error: 'Photo not found in the album', code: 404 });
+                const err = new Error('Photo not found in the album');
+                err.code = 404;
+                throw err;
             }
 
-            photos.splice(photoIndex, 1);
+            album.photos.splice(photoIndex, 1);
 
             const result = await db.collection('albums').updateOne(
                 { _id: new ObjectId(albumId) },
-                { $set: { photos } }
+                { $set: { photos: album.photos } }
             );
 
             if (result.modifiedCount === 0) {
-                throw new Error({ error: 'Failed to delete photo', code: 500 });
+                const err = new Error('Failed to delete photo');
+                err.code = 500;
+                throw err;
             }
 
             return { message: 'Photo deleted successfully' };
         }
     });
+};
 
-
-    // try {
-    //     const db = await getDbClient();
-    //     const { albumId, photoIndex } = req.params;
-
-
-
-    //     if (!album) {
-    //         return res.status(404).json({ error: 'Album not found or unauthorized' });
-    //     }
-
-    //     // Check if the photo index is valid
-    //     if (photoIndex < 0 || photoIndex >= album.photos.length) {
-    //         return res.status(400).json({ error: 'Invalid photo index' });
-    //     }
-
-    //     // Remove the photo from the album
-    //     album.photos.splice(photoIndex, 1);
-
-    //     // Update the album in the database
-    //     await db.collection('albums').updateOne(
-    //         { _id: new ObjectId(albumId) },
-    //         { $set: { photos: album.photos } }
-    //     );
-
-    //     res.status(200).json({ message: 'Photo deleted successfully' });
-    // } catch (error) {
-    //     res.status(500).json({ error: 'Failed to delete photo' });
-    // }
-}
-
+// DELETE an entire album
 const deleteAlbumController = async (req, res) => {
     return baseController({
         req,
@@ -199,14 +182,17 @@ const deleteAlbumController = async (req, res) => {
             });
 
             if (result.deletedCount === 0) {
-                throw new Error({ error: 'Album not found or unauthorized', code: 404 });
+                const err = new Error('Album not found or unauthorized');
+                err.code = 404;
+                throw err;
             }
 
             return { message: 'Album deleted successfully' };
         }
-    })
+    });
 };
 
+// SEARCH photos by metadata text query
 const findPhotosByMetadataController = async (req, res) => {
     return baseController({
         req,
@@ -216,7 +202,6 @@ const findPhotosByMetadataController = async (req, res) => {
         async callback({ db, body, user }) {
             const { query } = body;
 
-            // This query will search for albums where the album name, description, or any photo's metadata (description, format, or space) contains the query string.
             const result = await db.collection('albums').aggregate([
                 {
                     $match: {
@@ -256,7 +241,7 @@ const findPhotosByMetadataController = async (req, res) => {
             return result;
         }
     });
-}
+};
 
 module.exports = {
     getAlbumsController,
@@ -265,4 +250,4 @@ module.exports = {
     deleteAlbumController,
     deletePhotoController,
     findPhotosByMetadataController
-}
+};
