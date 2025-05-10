@@ -3,9 +3,18 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { JWT_SECRET } = process.env;
 
+// Helper functions
+function validateEmail(email) {
+    const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return re.test(email);
+}
+
+function validatePassword(password) {
+    return password.length >= 8;
+}
+
 const loginController = async (req, res) => {
     try {
-
         const db = await getDbClient();
 
         const { email, password } = req.body;
@@ -28,8 +37,7 @@ const loginController = async (req, res) => {
 
 const registerController = async (req, res) => {
     try {
-
-        const db = getDbClient();
+        const db = await getDbClient();
 
         const { username, email, password } = req.body;
         if (!username || !email || !password) {
