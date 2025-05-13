@@ -50,8 +50,12 @@ async function baseController({ req, res, required, requiredAuth, callback }) {
             error: error.message || error
         });
 
-        // Ensure we return a numeric status code only
-        const statusCode = typeof error.code === 'number' ? error.code : 500;
+        // Safely determine a valid HTTP status code
+        const statusCode = (typeof error.statusCode === 'number' && error.statusCode >= 100 && error.statusCode <= 599)
+            ? error.statusCode
+            : (typeof error.code === 'number' && error.code >= 100 && error.code <= 599)
+                ? error.code
+                : 500;
 
         // Send a uniform error response
         return res.status(statusCode).json({
